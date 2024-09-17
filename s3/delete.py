@@ -31,12 +31,12 @@ def delete_s3_object(s3_client, bucket_name, object_key, dry_run=False):
             if dry_run:
                 print(f"[DRY RUN] Would delete {len(objects_to_delete)} versions of object: s3://{bucket_name}/{object_key}")
                 for obj in objects_to_delete:
-                    print(f"  - Would delete version: {obj['VersionId']}")
+                    print(f"  - Would delete version: {obj['VersionId']} of s3://{bucket_name}/{obj['Key']}")
             else:
                 s3_client.delete_objects(Bucket=bucket_name, Delete={'Objects': objects_to_delete})
                 print(f"Deleted {len(objects_to_delete)} versions of object: s3://{bucket_name}/{object_key}")
                 for obj in objects_to_delete:
-                    print(f"  - Deleted version: {obj['VersionId']}")
+                    print(f"  - Deleted version: {obj['VersionId']} of s3://{bucket_name}/{obj['Key']}")
 
             # Check if there are more versions to delete
             if versions['IsTruncated']:
