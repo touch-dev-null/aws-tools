@@ -5,9 +5,18 @@ import argparse
 
 def delete_s3_object(s3_client, bucket_name, object_key, dry_run=False):
     try:
+        continuation_token = None
         while True:
             # List versions of the object, 1000 at a time
-            versions = s3_client.list_object_versions(Bucket=bucket_name, Prefix=object_key, MaxKeys=1000)
+            list_args = {
+                'Bucket': bucket_name,
+                'Prefix': object_key,
+                'MaxKeys': 1000
+            }
+            if continuation_token:
+                list_args['KeyMarker'] = continuation_token
+
+            versions = s3_client.list_object_versions(**list_args)
 
             objects_to_delete = []
             if 'Versions' in versions:
@@ -30,9 +39,10 @@ def delete_s3_object(s3_client, bucket_name, object_key, dry_run=False):
                     print(f"  - Deleted version: {obj['VersionId']}")
 
             # Check if there are more versions to delete
-            remaining_versions = s3_client.list_object_versions(Bucket=bucket_name, Prefix=object_key, MaxKeys=1)
-            if 'Versions' not in remaining_versions and 'DeleteMarkers' not in remaining_versions:
-                print(f"All versions of object s3://{bucket_name}/{object_key} have been deleted.")
+            if versions['IsTruncated']:
+                continuation_token = versions['NextKeyMarker']
+            else:
+                print(f"All versions of object s3://{bucket_name}/{object_key} have been {'simulated for deletion' if dry_run else 'deleted'}.")
                 break
 
         return True
