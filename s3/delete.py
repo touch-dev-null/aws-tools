@@ -5,38 +5,36 @@ import argparse
 
 def delete_s3_object(s3_client, bucket_name, object_key, dry_run=False):
     try:
-        # List all versions of the object
-        paginator = s3_client.get_paginator('list_object_versions')
-        versions = {'Versions': [], 'DeleteMarkers': []}
-        for page in paginator.paginate(Bucket=bucket_name, Prefix=object_key):
-            if 'Versions' in page:
-                versions['Versions'].extend(page['Versions'])
-            if 'DeleteMarkers' in page:
-                versions['DeleteMarkers'].extend(page['DeleteMarkers'])
-        objects_to_delete = []
-        if 'Versions' in versions:
-            objects_to_delete.extend([{'Key': obj['Key'], 'VersionId': obj['VersionId']} for obj in versions['Versions']])
-        if 'DeleteMarkers' in versions:
-            objects_to_delete.extend([{'Key': obj['Key'], 'VersionId': obj['VersionId']} for obj in versions['DeleteMarkers']])
+        while True:
+            # List versions of the object, 1000 at a time
+            versions = s3_client.list_object_versions(Bucket=bucket_name, Prefix=object_key, MaxKeys=1000)
 
-        if objects_to_delete:
-            for i in range(0, len(objects_to_delete), 1000):
-                batch = objects_to_delete[i:i+1000]
-                if dry_run:
-                    print(f"[DRY RUN] Would delete {len(batch)} versions of object: s3://{bucket_name}/{object_key}")
-                    for obj in batch:
-                        print(f"  - Would delete version: {obj['VersionId']}")
-                else:
-                    s3_client.delete_objects(Bucket=bucket_name, Delete={'Objects': batch})
-                    print(f"Deleted {len(batch)} versions of object: s3://{bucket_name}/{object_key}")
-                    for obj in batch:
-                        print(f"  - Deleted version: {obj['VersionId']}")
-        else:
+            objects_to_delete = []
+            if 'Versions' in versions:
+                objects_to_delete.extend([{'Key': obj['Key'], 'VersionId': obj['VersionId']} for obj in versions['Versions']])
+            if 'DeleteMarkers' in versions:
+                objects_to_delete.extend([{'Key': obj['Key'], 'VersionId': obj['VersionId']} for obj in versions['DeleteMarkers']])
+
+            if not objects_to_delete:
+                print(f"No more objects to delete for: s3://{bucket_name}/{object_key}")
+                break
+
             if dry_run:
-                print(f"[DRY RUN] Would delete object: s3://{bucket_name}/{object_key}")
+                print(f"[DRY RUN] Would delete {len(objects_to_delete)} versions of object: s3://{bucket_name}/{object_key}")
+                for obj in objects_to_delete:
+                    print(f"  - Would delete version: {obj['VersionId']}")
             else:
-                s3_client.delete_object(Bucket=bucket_name, Key=object_key)
-                print(f"Deleted object: s3://{bucket_name}/{object_key}")
+                s3_client.delete_objects(Bucket=bucket_name, Delete={'Objects': objects_to_delete})
+                print(f"Deleted {len(objects_to_delete)} versions of object: s3://{bucket_name}/{object_key}")
+                for obj in objects_to_delete:
+                    print(f"  - Deleted version: {obj['VersionId']}")
+
+            # Check if there are more versions to delete
+            remaining_versions = s3_client.list_object_versions(Bucket=bucket_name, Prefix=object_key, MaxKeys=1)
+            if 'Versions' not in remaining_versions and 'DeleteMarkers' not in remaining_versions:
+                print(f"All versions of object s3://{bucket_name}/{object_key} have been deleted.")
+                break
+
         return True
     except ClientError as e:
         print(f"Error {'simulating deletion of' if dry_run else 'deleting'} object s3://{bucket_name}/{object_key}: {e}")
