@@ -38,19 +38,31 @@ def delete_s3_bucket(s3_client, bucket_name):
                 objects_to_delete.extend([{'Key': obj['Key'], 'VersionId': obj['VersionId']} for obj in page['DeleteMarkers']])
 
             if objects_to_delete:
-                s3_client.delete_objects(Bucket=bucket_name, Delete={'Objects': objects_to_delete})
-                deleted_count += len(objects_to_delete)
-                print(f"Deleted {len(objects_to_delete)} objects/versions from bucket: s3://{bucket_name}")
-                for obj in objects_to_delete:
-                    print(f"  - Deleted: {obj['Key']} (Version: {obj['VersionId']})")
+                # Delete objects in batches of 1000 (AWS limit)
+                for i in range(0, len(objects_to_delete), 1000):
+                    batch = objects_to_delete[i:i+1000]
+                    s3_client.delete_objects(Bucket=bucket_name, Delete={'Objects': batch})
+                    deleted_count += len(batch)
+                    print(f"Deleted {len(batch)} objects/versions from bucket: s3://{bucket_name}")
+                    for obj in batch:
+                        print(f"  - Deleted: {obj['Key']} (Version: {obj['VersionId']})")
 
-        # Delete the bucket
-        s3_client.delete_bucket(Bucket=bucket_name)
-        print(f"Deleted bucket: s3://{bucket_name}")
-        print(f"Total objects/versions deleted: {deleted_count}")
-        return True
+        # Check if the bucket is empty before deleting
+        remaining_objects = list(s3_client.list_objects(Bucket=bucket_name, MaxKeys=1).get('Contents', []))
+        if not remaining_objects:
+            # Only delete the bucket if it's the root bucket (no '/' in the name)
+            if '/' not in bucket_name:
+                s3_client.delete_bucket(Bucket=bucket_name)
+                print(f"Deleted root bucket: s3://{bucket_name}")
+            else:
+                print(f"Cleared all objects from: s3://{bucket_name}")
+            print(f"Total objects/versions deleted: {deleted_count}")
+            return True
+        else:
+            print(f"Bucket s3://{bucket_name} still contains objects. Please retry the operation.")
+            return False
     except ClientError as e:
-        print(f"Error deleting bucket s3://{bucket_name}: {e}")
+        print(f"Error processing bucket s3://{bucket_name}: {e}")
         return False
 
 def process_s3_link(s3_client, link):
@@ -78,13 +90,13 @@ def main():
         print(f"\nProcessing: {link}")
         if process_s3_link(s3_client, link):
             successful_deletions.append(link)
-            print(f"Successfully deleted: {link}")
+            print(f"Successfully processed: {link}")
         else:
             with open(error_log, 'a') as error_file:
-                error_file.write(f"Failed to delete: {link}\n")
-            print(f"Failed to delete: {link}")
+                error_file.write(f"Failed to process: {link}\n")
+            print(f"Failed to process: {link}")
 
-    # Remove successfully deleted objects from the input file
+    # Remove successfully processed objects from the input file
     with open(input_file, 'w') as f:
         for link in links:
             if link.strip() not in successful_deletions:
@@ -92,8 +104,8 @@ def main():
 
     print(f"\nSummary:")
     print(f"Total links processed: {len(links)}")
-    print(f"Successfully deleted: {len(successful_deletions)}")
-    print(f"Failed deletions: {len(links) - len(successful_deletions)}")
+    print(f"Successfully processed: {len(successful_deletions)}")
+    print(f"Failed operations: {len(links) - len(successful_deletions)}")
 
 if __name__ == "__main__":
     main()
