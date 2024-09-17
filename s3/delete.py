@@ -14,15 +14,17 @@ def delete_s3_object(s3_client, bucket_name, object_key, dry_run=False):
             objects_to_delete.extend([{'Key': obj['Key'], 'VersionId': obj['VersionId']} for obj in versions['DeleteMarkers']])
 
         if objects_to_delete:
-            if dry_run:
-                print(f"[DRY RUN] Would delete {len(objects_to_delete)} versions of object: s3://{bucket_name}/{object_key}")
-                for obj in objects_to_delete:
-                    print(f"  - Would delete version: {obj['VersionId']}")
-            else:
-                s3_client.delete_objects(Bucket=bucket_name, Delete={'Objects': objects_to_delete})
-                print(f"Deleted {len(objects_to_delete)} versions of object: s3://{bucket_name}/{object_key}")
-                for obj in objects_to_delete:
-                    print(f"  - Deleted version: {obj['VersionId']}")
+            for i in range(0, len(objects_to_delete), 1000):
+                batch = objects_to_delete[i:i+1000]
+                if dry_run:
+                    print(f"[DRY RUN] Would delete {len(batch)} versions of object: s3://{bucket_name}/{object_key}")
+                    for obj in batch:
+                        print(f"  - Would delete version: {obj['VersionId']}")
+                else:
+                    s3_client.delete_objects(Bucket=bucket_name, Delete={'Objects': batch})
+                    print(f"Deleted {len(batch)} versions of object: s3://{bucket_name}/{object_key}")
+                    for obj in batch:
+                        print(f"  - Deleted version: {obj['VersionId']}")
         else:
             if dry_run:
                 print(f"[DRY RUN] Would delete object: s3://{bucket_name}/{object_key}")
