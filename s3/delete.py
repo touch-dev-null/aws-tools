@@ -6,7 +6,13 @@ import argparse
 def delete_s3_object(s3_client, bucket_name, object_key, dry_run=False):
     try:
         # List all versions of the object
-        versions = s3_client.list_object_versions(Bucket=bucket_name, Prefix=object_key)
+        paginator = s3_client.get_paginator('list_object_versions')
+        versions = {'Versions': [], 'DeleteMarkers': []}
+        for page in paginator.paginate(Bucket=bucket_name, Prefix=object_key):
+            if 'Versions' in page:
+                versions['Versions'].extend(page['Versions'])
+            if 'DeleteMarkers' in page:
+                versions['DeleteMarkers'].extend(page['DeleteMarkers'])
         objects_to_delete = []
         if 'Versions' in versions:
             objects_to_delete.extend([{'Key': obj['Key'], 'VersionId': obj['VersionId']} for obj in versions['Versions']])
